@@ -1,0 +1,914 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SCV Controller — Android Remote Runner</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+  <style>
+    /* ── Design Tokens ── */
+    :root {
+      --bg:          #0c0e14;
+      --bg-card:     #13161e;
+      --bg-card2:    #191d29;
+      --bg-input:    #0e1018;
+      --border:      #232838;
+      --border-act:  #394568;
+      --accent:      #4f8ef7;
+      --accent2:     #7c5cbf;
+      --accent-g:    rgba(79,142,247,0.18);
+      --success:     #22c55e;
+      --warning:     #f59e0b;
+      --danger:      #ef4444;
+      --purple:      #a78bfa;
+      --text:        #e4e8f2;
+      --text-sec:    #818aa0;
+      --text-muted:  #4a5168;
+      --r:           12px;
+      --r-sm:        8px;
+      --r-xs:        6px;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Inter', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      height: 100vh;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+
+    body::before {
+      content: '';
+      position: fixed; inset: 0; pointer-events: none; z-index: 0;
+      background:
+        radial-gradient(ellipse 60% 40% at 10% 0%,  rgba(79,142,247,0.07) 0%, transparent 70%),
+        radial-gradient(ellipse 50% 50% at 90% 100%, rgba(124,92,191,0.06) 0%, transparent 70%);
+    }
+
+    /* ── Header ── */
+    header {
+      position: relative; z-index: 10; flex-shrink: 0;
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 13px 24px;
+      background: rgba(12,14,20,0.97);
+      border-bottom: 1px solid var(--border);
+      backdrop-filter: blur(12px);
+    }
+    .logo { display: flex; align-items: center; gap: 11px; }
+    .logo-icon {
+      width: 38px; height: 38px; flex-shrink: 0;
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      border-radius: 10px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 18px;
+      box-shadow: 0 4px 18px var(--accent-g);
+    }
+    .logo-title { font-size: 17px; font-weight: 700; letter-spacing: -.4px; }
+    .logo-sub   { font-size: 11px; color: var(--text-muted); margin-top: 1px; }
+
+    .conn-badge {
+      display: flex; align-items: center; gap: 6px;
+      background: var(--bg-card); border: 1px solid var(--border);
+      border-radius: 999px; padding: 5px 13px;
+      font-size: 11px; color: var(--text-sec);
+    }
+    .dot {
+      width: 6px; height: 6px; border-radius: 50%;
+      background: var(--success);
+      animation: dpulse 2s ease-in-out infinite;
+    }
+    @keyframes dpulse {
+      0%,100% { box-shadow: 0 0 0 0 rgba(34,197,94,.4); }
+      50%      { box-shadow: 0 0 0 5px rgba(34,197,94,0); }
+    }
+
+    /* ── Stats Bar ── */
+    #stats-bar {
+      display: none; flex-shrink: 0;
+      position: relative; z-index: 9;
+      align-items: center; gap: 28px;
+      padding: 9px 24px;
+      background: var(--bg-card);
+      border-bottom: 1px solid var(--border);
+    }
+    #stats-bar.show { display: flex; }
+    .stat { display: flex; align-items: baseline; gap: 6px; }
+    .stat-n { font-size: 22px; font-weight: 700; line-height: 1; }
+    .stat-l { font-size: 11px; color: var(--text-sec); }
+    .c-blue   { color: var(--accent); }
+    .c-green  { color: var(--success); }
+    .c-red    { color: var(--danger); }
+    .c-orange { color: var(--warning); }
+
+    /* ── Main Grid ── */
+    .grid {
+      position: relative; z-index: 1;
+      display: grid;
+      grid-template-columns: 490px 1fr;
+      flex: 1; overflow: hidden;
+    }
+
+    /* ── Left Panel ── */
+    .left {
+      border-right: 1px solid var(--border);
+      overflow-y: auto; overflow-x: hidden;
+      padding: 18px 16px;
+      display: flex; flex-direction: column; gap: 14px;
+    }
+    .left::-webkit-scrollbar { width: 4px; }
+    .left::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+    /* ── Right Panel ── */
+    .right {
+      overflow-y: auto; overflow-x: hidden;
+      padding: 20px;
+      background: rgba(8,9,14,.6);
+    }
+    .right::-webkit-scrollbar { width: 5px; }
+    .right::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+    /* ── Card ── */
+    .card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--r);
+      overflow: hidden;
+    }
+    .card-hd {
+      display: flex; align-items: center; gap: 8px;
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border);
+      font-size: 13px; font-weight: 600;
+    }
+    .card-hd .hico { font-size: 15px; }
+    .card-bd { padding: 14px 16px; }
+
+    /* ── Labels ── */
+    .lbl {
+      font-size: 10px; font-weight: 600; letter-spacing: .1em;
+      text-transform: uppercase; color: var(--text-muted);
+      margin-bottom: 7px;
+    }
+
+    /* ── Inputs ── */
+    input[type=text], input[type=password] {
+      background: var(--bg-input);
+      border: 1px solid var(--border);
+      border-radius: var(--r-xs);
+      padding: 8px 10px;
+      color: var(--text);
+      font-family: 'Inter', sans-serif;
+      font-size: 13px;
+      outline: none;
+      transition: border-color .18s, box-shadow .18s;
+    }
+    input:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px var(--accent-g);
+    }
+    input::placeholder { color: var(--text-muted); }
+
+    /* ── Global Items ── */
+    .items-box {
+      display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
+      min-height: 38px;
+      padding: 8px 10px;
+      background: var(--bg-input); border: 1px solid var(--border);
+      border-radius: var(--r-xs); margin-bottom: 8px;
+    }
+    .g-tag {
+      display: inline-flex; align-items: center; gap: 4px;
+      background: rgba(79,142,247,.15); border: 1px solid rgba(79,142,247,.3);
+      border-radius: 999px; padding: 3px 9px;
+      font-size: 11px; color: var(--accent);
+    }
+    .g-tag-rm {
+      background: none; border: none; color: var(--text-muted);
+      cursor: pointer; font-size: 13px; padding: 0; line-height: 1;
+      transition: color .15s;
+    }
+    .g-tag-rm:hover { color: var(--danger); }
+    .add-row { display: flex; gap: 6px; }
+    .add-row input { flex: 1; }
+    .btn-add-item {
+      background: var(--accent); border: none; border-radius: var(--r-xs);
+      color: #fff; cursor: pointer; padding: 8px 14px;
+      font-size: 12px; font-weight: 600; font-family: 'Inter', sans-serif;
+      transition: background .18s; white-space: nowrap;
+    }
+    .btn-add-item:hover { background: #6ba3fa; }
+
+    /* ── Machine Cards ── */
+    .mc-list { display: flex; flex-direction: column; gap: 10px; margin-bottom: 10px; }
+
+    .mc {
+      background: var(--bg-card2); border: 1px solid var(--border);
+      border-radius: var(--r-sm); overflow: hidden;
+      transition: border-color .2s;
+    }
+    .mc:hover { border-color: var(--border-act); }
+
+    .mc-top {
+      display: grid;
+      grid-template-columns: 1fr .75fr .75fr auto auto;
+      gap: 6px; padding: 10px 12px;
+      border-bottom: 1px solid var(--border);
+      align-items: center;
+    }
+    .mc-top input { width: 100%; }
+
+    .btn-scan {
+      display: flex; align-items: center; gap: 4px;
+      background: rgba(79,142,247,.12); border: 1px solid rgba(79,142,247,.28);
+      border-radius: var(--r-xs); color: var(--accent);
+      cursor: pointer; padding: 7px 11px;
+      font-size: 11px; font-weight: 600; font-family: 'Inter', sans-serif;
+      white-space: nowrap; transition: background .15s;
+    }
+    .btn-scan:hover:not(:disabled) { background: rgba(79,142,247,.22); }
+    .btn-scan:disabled { opacity: .5; cursor: not-allowed; }
+
+    .btn-rm {
+      background: transparent; border: 1px solid var(--border);
+      border-radius: var(--r-xs); color: var(--text-muted);
+      cursor: pointer; padding: 7px 8px; font-size: 14px; line-height: 1;
+      transition: all .15s;
+    }
+    .btn-rm:hover { background: rgba(239,68,68,.1); border-color: var(--danger); color: var(--danger); }
+
+    .mc-body { padding: 10px 12px; }
+
+    .scan-hint { font-size: 12px; color: var(--text-muted); text-align: center; padding: 6px 0; }
+    .scanning {
+      display: flex; align-items: center; justify-content: center;
+      gap: 8px; font-size: 12px; color: var(--text-sec); padding: 8px 0;
+    }
+    .spin-sm {
+      width: 13px; height: 13px;
+      border: 2px solid var(--border); border-top-color: var(--accent);
+      border-radius: 50%; animation: spin .65s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .scan-err {
+      font-size: 12px; color: var(--danger);
+      background: rgba(239,68,68,.07); border: 1px solid rgba(239,68,68,.2);
+      border-radius: var(--r-xs); padding: 8px 11px;
+    }
+    .dev-count { font-size: 11px; color: var(--text-muted); font-weight: 500; margin-bottom: 7px; }
+    .dev-list { display: flex; flex-direction: column; gap: 7px; }
+
+    /* ── Device Card ── */
+    .dvc {
+      background: var(--bg-card); border: 1px solid var(--border);
+      border-radius: var(--r-xs); padding: 9px 11px;
+      transition: border-color .2s;
+    }
+    .dvc.sel { border-color: rgba(79,142,247,.4); }
+
+    .dvc-top {
+      display: flex; align-items: center; gap: 8px; margin-bottom: 8px;
+    }
+    input[type=checkbox] {
+      width: 15px; height: 15px; flex-shrink: 0;
+      accent-color: var(--accent); cursor: pointer;
+    }
+    .dvc-sn {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 12px; font-weight: 500; color: var(--text); flex: 1;
+    }
+
+    .dvc-row-label { font-size: 10px; color: var(--text-muted); margin-bottom: 4px; }
+
+    /* Item chips */
+    .chips { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 9px; }
+    .chip {
+      display: inline-flex; align-items: center;
+      background: var(--bg-card2); border: 1px solid var(--border);
+      border-radius: 999px; padding: 3px 9px;
+      font-size: 11px; color: var(--text-muted);
+      cursor: pointer; user-select: none;
+      transition: all .13s;
+    }
+    .chip:hover { border-color: var(--accent); color: var(--accent); }
+    .chip.on {
+      background: rgba(79,142,247,.15);
+      border-color: rgba(79,142,247,.4);
+      color: var(--accent);
+    }
+    .chip.empty { font-style: italic; pointer-events: none; }
+
+    /* ID + Script fields */
+    .dvc-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
+    .dvc-field label { display: block; font-size: 10px; color: var(--text-sec); margin-bottom: 4px; }
+    .dvc-field input { width: 100%; font-family: 'JetBrains Mono', monospace; font-size: 11px; }
+
+    /* ── Add Machine Btn ── */
+    .btn-add-mc {
+      display: flex; align-items: center; justify-content: center; gap: 6px;
+      background: transparent; border: 1px dashed var(--border-act);
+      border-radius: var(--r-xs); color: var(--accent);
+      cursor: pointer; padding: 8px 12px;
+      font-size: 12px; font-weight: 500; font-family: 'Inter', sans-serif;
+      width: 100%; transition: all .18s;
+    }
+    .btn-add-mc:hover { background: var(--accent-g); }
+
+    /* ── Run Button ── */
+    #btn-run {
+      display: flex; align-items: center; justify-content: center; gap: 9px;
+      width: 100%; padding: 13px 20px;
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      border: none; border-radius: var(--r-sm);
+      color: #fff; font-family: 'Inter', sans-serif;
+      font-size: 15px; font-weight: 700;
+      cursor: pointer; letter-spacing: .02em;
+      transition: all .22s;
+      box-shadow: 0 4px 22px var(--accent-g);
+    }
+    #btn-run:hover:not(:disabled) {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 32px rgba(79,142,247,.45);
+    }
+    #btn-run:disabled { opacity: .5; cursor: not-allowed; transform: none; }
+    .run-spin {
+      width: 17px; height: 17px;
+      border: 2px solid rgba(255,255,255,.3); border-top-color: #fff;
+      border-radius: 50%; animation: spin .65s linear infinite;
+      display: none;
+    }
+
+    /* ── Terminal Groups ── */
+    .mtg { margin-bottom: 26px; }
+    .mtg-hd {
+      display: flex; align-items: center; gap: 7px;
+      font-size: 12px; font-weight: 600; color: var(--text-sec);
+      margin-bottom: 10px; padding-bottom: 7px;
+      border-bottom: 1px solid var(--border);
+    }
+    .dtg {
+      margin-bottom: 14px; padding-left: 14px;
+      border-left: 2px solid var(--border);
+    }
+    .dtg-hd {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 10px; color: var(--text-muted);
+      margin-bottom: 7px;
+    }
+    .tc {
+      background: var(--bg-card); border: 1px solid var(--border);
+      border-radius: var(--r-sm); overflow: hidden; margin-bottom: 7px;
+      transition: border-color .25s;
+    }
+    .tc.s-run  { border-color: var(--accent); }
+    .tc.s-ok   { border-color: var(--success); }
+    .tc.s-fail { border-color: var(--danger); }
+
+    .tc-hd {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 8px 13px; background: var(--bg-card2);
+      border-bottom: 1px solid var(--border); font-size: 12px;
+    }
+    .tc-title { display: flex; align-items: center; gap: 5px; font-weight: 600; }
+
+    .badge {
+      font-size: 10px; font-weight: 600; letter-spacing: .06em;
+      text-transform: uppercase; padding: 2px 8px; border-radius: 999px;
+    }
+    .b-q  { background: rgba(74,81,104,.25); color: var(--text-muted); }
+    .b-co { background: rgba(245,158,11,.14); color: var(--warning); animation: bp 1.5s ease-in-out infinite; }
+    .b-cr { background: rgba(167,139,250,.14); color: var(--purple); animation: bp 1.5s ease-in-out infinite; }
+    .b-r  { background: rgba(79,142,247,.14); color: var(--accent); animation: bp 1.5s ease-in-out infinite; }
+    .b-ok { background: rgba(34,197,94,.14); color: var(--success); }
+    .b-f  { background: rgba(239,68,68,.14); color: var(--danger); }
+    @keyframes bp { 0%,100% { opacity: 1; } 50% { opacity: .55; } }
+
+    .tc-body {
+      padding: 9px 13px; background: #070810;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11.5px; line-height: 1.65;
+      height: 195px; overflow-y: auto;
+    }
+    .tc-body::-webkit-scrollbar { width: 4px; }
+    .tc-body::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+    .ll { display: flex; gap: 7px; }
+    .ll-ts { color: var(--text-muted); font-size: 10px; flex-shrink: 0; padding-top: 2px; }
+    .ll-msg { word-break: break-all; }
+    .ll.lINFO    .ll-msg { color: #60a5fa; }
+    .ll.lSUCCESS .ll-msg { color: var(--success); }
+    .ll.lERROR   .ll-msg { color: #f87171; }
+    .ll.lOUTPUT  .ll-msg { color: #c4ccde; }
+
+    /* ── Empty State ── */
+    .empty {
+      display: flex; flex-direction: column; align-items: center;
+      justify-content: center; height: 100%;
+      gap: 14px; color: var(--text-muted);
+    }
+    .empty-ico { font-size: 52px; opacity: .25; }
+    .empty-txt { font-size: 13px; text-align: center; line-height: 1.65; }
+
+    /* ── Toasts ── */
+    #toasts {
+      position: fixed; bottom: 22px; right: 22px;
+      display: flex; flex-direction: column; gap: 7px; z-index: 9999;
+    }
+    .toast {
+      background: var(--bg-card2); border: 1px solid var(--border);
+      border-left: 3px solid var(--accent);
+      border-radius: var(--r-xs); padding: 9px 15px;
+      font-size: 13px; max-width: 340px;
+      box-shadow: 0 8px 32px rgba(0,0,0,.55);
+      animation: tin .25s ease;
+    }
+    .toast.ok   { border-left-color: var(--success); }
+    .toast.err  { border-left-color: var(--danger); }
+    @keyframes tin { from { transform: translateX(110%); opacity:0; } to { transform: none; opacity:1; } }
+  </style>
+</head>
+<body>
+
+<!-- ═══ HEADER ═══ -->
+<header>
+  <div class="logo">
+    <div class="logo-icon">⚡</div>
+    <div>
+      <div class="logo-title">SCV Controller</div>
+      <div class="logo-sub">Android Remote Test Runner — LAN Multi-Machine</div>
+    </div>
+  </div>
+  <div class="conn-badge">
+    <div class="dot"></div>
+    <span id="conn-lbl">Đang kết nối...</span>
+  </div>
+</header>
+
+<!-- ═══ STATS ═══ -->
+<div id="stats-bar">
+  <div class="stat"><div class="stat-n c-blue"   id="s-total">0</div><div class="stat-l">Tổng runs</div></div>
+  <div class="stat"><div class="stat-n c-orange" id="s-run">0</div><div class="stat-l">Đang chạy</div></div>
+  <div class="stat"><div class="stat-n c-green"  id="s-ok">0</div><div class="stat-l">Thành công</div></div>
+  <div class="stat"><div class="stat-n c-red"    id="s-fail">0</div><div class="stat-l">Thất bại</div></div>
+</div>
+
+<!-- ═══ MAIN GRID ═══ -->
+<div class="grid">
+
+  <!-- ══ LEFT ══ -->
+  <div class="left">
+
+    <!-- Global Config -->
+    <div class="card">
+      <div class="card-hd"><span class="hico">⚙️</span> Cấu hình chung</div>
+      <div class="card-bd">
+
+        <!-- Base Dir -->
+        <div class="lbl">Thư mục lưu kết quả (trên máy đích)</div>
+        <input type="text" id="base-dir" value="C:\scv_runs" style="width:100%;margin-bottom:14px" />
+
+        <!-- Items -->
+        <div class="lbl">Danh sách Items (label đặt tên folder)</div>
+        <div class="items-box" id="items-box">
+          <span style="font-size:11px;color:var(--text-muted);font-style:italic">Chưa có item — thêm bên dưới</span>
+        </div>
+        <div class="add-row">
+          <input type="text" id="new-item" placeholder="Camera, Battery, GPS..." onkeydown="if(event.key==='Enter')addItem()" />
+          <button class="btn-add-item" onclick="addItem()">+ Thêm</button>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- Machines -->
+    <div class="card">
+      <div class="card-hd"><span class="hico">🖥️</span> Máy đích</div>
+      <div class="card-bd">
+        <div class="mc-list" id="mc-list"></div>
+        <button class="btn-add-mc" onclick="addMachine()">
+          <span style="font-size:16px;line-height:1">+</span> Thêm máy
+        </button>
+      </div>
+    </div>
+
+    <!-- Run -->
+    <button id="btn-run" onclick="runAll()">
+      <div class="run-spin" id="run-spin"></div>
+      <span id="run-lbl">🚀 Chạy tất cả</span>
+    </button>
+
+  </div>
+
+  <!-- ══ RIGHT ══ -->
+  <div class="right" id="right">
+    <div class="empty">
+      <div class="empty-ico">📱</div>
+      <div class="empty-txt">
+        Thêm máy → Scan thiết bị → Chọn items<br>
+        → nhập Test ID &amp; Script → <strong>Chạy tất cả</strong>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<div id="toasts"></div>
+
+<script>
+// ═══════════════════════════════════════════════════════════
+//  STATE
+// ═══════════════════════════════════════════════════════════
+let globalItems  = [];   // string[]
+let machines     = [];   // machine objects (see addMachine)
+let mcIdCounter  = 0;
+const runStats   = {};   // session_id → status
+
+// ═══════════════════════════════════════════════════════════
+//  SOCKET.IO
+// ═══════════════════════════════════════════════════════════
+const socket = io();
+socket.on('connect',    () => { document.getElementById('conn-lbl').textContent = 'Đã kết nối'; });
+socket.on('disconnect', () => { document.getElementById('conn-lbl').textContent = 'Mất kết nối'; });
+
+socket.on('log', d => appendLog(d.session_id, d));
+socket.on('status_update', d => {
+  updateBadge(d.session_id, d.status);
+  runStats[d.session_id] = d.status;
+  refreshStats();
+});
+
+// ═══════════════════════════════════════════════════════════
+//  GLOBAL ITEMS
+// ═══════════════════════════════════════════════════════════
+function addItem() {
+  const inp = document.getElementById('new-item');
+  const val = inp.value.trim();
+  if (!val) return;
+  if (globalItems.includes(val)) { toast(`"${val}" đã tồn tại`, 'err'); return; }
+  globalItems.push(val);
+  inp.value = '';
+  renderGlobalItems();
+  // auto-add to all existing scanned devices
+  machines.forEach(m => m.devices.forEach(d => {
+    if (!d.selectedItems.includes(val)) d.selectedItems.push(val);
+    const el = document.getElementById(`chips-${m.id}-${d.sn}`);
+    if (el) el.innerHTML = chipsHTML(m.id, d);
+  }));
+}
+
+function removeItem(name) {
+  globalItems = globalItems.filter(x => x !== name);
+  machines.forEach(m => m.devices.forEach(d => {
+    d.selectedItems = d.selectedItems.filter(x => x !== name);
+    const el = document.getElementById(`chips-${m.id}-${d.sn}`);
+    if (el) el.innerHTML = chipsHTML(m.id, d);
+  }));
+  renderGlobalItems();
+}
+
+function renderGlobalItems() {
+  const box = document.getElementById('items-box');
+  if (!globalItems.length) {
+    box.innerHTML = '<span style="font-size:11px;color:var(--text-muted);font-style:italic">Chưa có item — thêm bên dưới</span>';
+    return;
+  }
+  box.innerHTML = globalItems.map(n => `
+    <span class="g-tag">
+      ${esc(n)}
+      <button class="g-tag-rm" onclick="removeItem('${esc(n)}')" title="Xóa">✕</button>
+    </span>`).join('');
+}
+
+// ═══════════════════════════════════════════════════════════
+//  MACHINES
+// ═══════════════════════════════════════════════════════════
+function addMachine() {
+  const id = ++mcIdCounter;
+  machines.push({ id, ip:'', username:'', password:'', scanning:false, scanned:false, scanError:null, devices:[] });
+
+  const list = document.getElementById('mc-list');
+  const el   = document.createElement('div');
+  el.className = 'mc';
+  el.id        = `mc-${id}`;
+  el.innerHTML = mcHTML(id);
+  list.appendChild(el);
+}
+
+function mcHTML(id) {
+  return `
+    <div class="mc-top">
+      <input type="text"     placeholder="192.168.1.x" id="mc-ip-${id}"   oninput="syncMC(${id},'ip',this.value)"       />
+      <input type="text"     placeholder="username"    id="mc-user-${id}" oninput="syncMC(${id},'username',this.value)" />
+      <input type="password" placeholder="password"    id="mc-pass-${id}" oninput="syncMC(${id},'password',this.value)" />
+      <button class="btn-scan" id="mc-scan-${id}" onclick="scanDevices(${id})">🔍 Scan</button>
+      <button class="btn-rm"   onclick="removeMachine(${id})" title="Xóa máy">✕</button>
+    </div>
+    <div class="mc-body" id="mc-body-${id}">
+      <div class="scan-hint">Nhập thông tin và nhấn <strong>Scan</strong> để tìm thiết bị ADB</div>
+    </div>`;
+}
+
+function syncMC(id, field, val) {
+  const m = machines.find(m => m.id === id);
+  if (m) m[field] = val;
+}
+
+function removeMachine(id) {
+  machines = machines.filter(m => m.id !== id);
+  const el = document.getElementById(`mc-${id}`);
+  if (el) el.remove();
+}
+
+async function scanDevices(id) {
+  const m = machines.find(m => m.id === id);
+  if (!m) return;
+
+  // Read current input values
+  m.ip       = document.getElementById(`mc-ip-${id}`).value.trim();
+  m.username = document.getElementById(`mc-user-${id}`).value.trim();
+  m.password = document.getElementById(`mc-pass-${id}`).value;
+
+  if (!m.ip || !m.username) { toast('Vui lòng nhập IP và username', 'err'); return; }
+
+  m.scanning = true; m.scanned = false; m.scanError = null;
+  renderMcBody(id);
+  const btn = document.getElementById(`mc-scan-${id}`);
+  if (btn) btn.disabled = true;
+
+  try {
+    const res  = await fetch('/api/scan_devices', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ ip: m.ip, username: m.username, password: m.password })
+    });
+    const data = await res.json();
+
+    if (!res.ok || data.error) {
+      m.scanning = false; m.scanError = data.error || 'Lỗi không xác định';
+    } else {
+      m.scanning = false; m.scanned = true;
+      const existing = new Map(m.devices.map(d => [d.sn, d]));
+      m.devices = data.devices.map(sn =>
+        existing.has(sn) ? existing.get(sn)
+                         : { sn, selected:true, testId:'', scriptName:'', selectedItems:[...globalItems] }
+      );
+    }
+  } catch (e) {
+    m.scanning = false; m.scanError = `Lỗi: ${e.message}`;
+  } finally {
+    renderMcBody(id);
+    const b = document.getElementById(`mc-scan-${id}`);
+    if (b) b.disabled = false;
+  }
+}
+
+function renderMcBody(id) {
+  const m = machines.find(m => m.id === id);
+  const body = document.getElementById(`mc-body-${id}`);
+  if (!m || !body) return;
+
+  if (m.scanning) {
+    body.innerHTML = `<div class="scanning"><div class="spin-sm"></div>Đang scan ADB trên ${esc(m.ip)}...</div>`;
+    return;
+  }
+  if (m.scanError) {
+    body.innerHTML = `<div class="scan-err">❌ ${esc(m.scanError)}</div><div class="scan-hint" style="margin-top:6px">Kiểm tra SSH và thử lại</div>`;
+    return;
+  }
+  if (m.scanned) {
+    if (!m.devices.length) {
+      body.innerHTML = '<div class="scan-hint">Không tìm thấy thiết bị ADB nào đang kết nối (status: device)</div>';
+      return;
+    }
+    body.innerHTML = `
+      <div class="dev-count">📱 ${m.devices.length} thiết bị tìm thấy</div>
+      <div class="dev-list">${m.devices.map(d => deviceHTML(id, d)).join('')}</div>`;
+    return;
+  }
+  body.innerHTML = '<div class="scan-hint">Nhập thông tin và nhấn <strong>Scan</strong> để tìm thiết bị ADB</div>';
+}
+
+function deviceHTML(mcId, d) {
+  return `
+    <div class="dvc ${d.selected ? 'sel' : ''}" id="dc-${mcId}-${d.sn}">
+      <div class="dvc-top">
+        <input type="checkbox" ${d.selected ? 'checked' : ''} onchange="toggleDevice(${mcId},'${d.sn}',this.checked)" />
+        <span class="dvc-sn">📱 ${esc(d.sn)}</span>
+      </div>
+      <div class="dvc-row-label">Items cần chạy (click để chọn):</div>
+      <div class="chips" id="chips-${mcId}-${d.sn}">${chipsHTML(mcId, d)}</div>
+      <div class="dvc-fields">
+        <div class="dvc-field">
+          <label>Test ID</label>
+          <input type="text" value="${esc(d.testId)}" placeholder="FARM_2026_001"
+            oninput="syncDevice(${mcId},'${d.sn}','testId',this.value)"
+            id="did-${mcId}-${d.sn}" />
+        </div>
+        <div class="dvc-field">
+          <label>Script / Test Suite</label>
+          <input type="text" value="${esc(d.scriptName)}" placeholder="camera_test.py"
+            oninput="syncDevice(${mcId},'${d.sn}','scriptName',this.value)"
+            id="dsc-${mcId}-${d.sn}" />
+        </div>
+      </div>
+    </div>`;
+}
+
+function chipsHTML(mcId, d) {
+  if (!globalItems.length) return '<span class="chip empty">Thêm items ở Cấu hình chung</span>';
+  return globalItems.map(item => {
+    const on = d.selectedItems.includes(item);
+    return `<span class="chip ${on ? 'on' : ''}"
+      onclick="toggleItem(${mcId},'${esc(d.sn)}','${esc(item)}',this)">${esc(item)}</span>`;
+  }).join('');
+}
+
+function toggleDevice(mcId, sn, checked) {
+  const m = machines.find(m => m.id === mcId); if (!m) return;
+  const d = m.devices.find(d => d.sn === sn);  if (!d) return;
+  d.selected = checked;
+  const card = document.getElementById(`dc-${mcId}-${sn}`);
+  if (card) card.className = `dvc ${checked ? 'sel' : ''}`;
+}
+
+function toggleItem(mcId, sn, item, el) {
+  const m = machines.find(m => m.id === mcId); if (!m) return;
+  const d = m.devices.find(d => d.sn === sn);  if (!d) return;
+  const idx = d.selectedItems.indexOf(item);
+  if (idx >= 0) { d.selectedItems.splice(idx, 1); el.classList.remove('on'); }
+  else           { d.selectedItems.push(item);      el.classList.add('on'); }
+}
+
+function syncDevice(mcId, sn, field, val) {
+  const m = machines.find(m => m.id === mcId); if (!m) return;
+  const d = m.devices.find(d => d.sn === sn);  if (!d) return;
+  d[field] = val;
+}
+
+// ═══════════════════════════════════════════════════════════
+//  RUN
+// ═══════════════════════════════════════════════════════════
+async function runAll() {
+  const baseDir  = document.getElementById('base-dir').value.trim();
+  const payload  = [];
+  const errors   = [];
+
+  for (const m of machines) {
+    if (!m.ip || !m.username) continue;
+    const devs = [];
+    for (const d of m.devices.filter(d => d.selected)) {
+      if (!d.selectedItems.length) { errors.push(`[${m.ip}] ${d.sn}: chưa chọn item`); continue; }
+      if (!d.testId.trim())        { errors.push(`[${m.ip}] ${d.sn}: chưa nhập Test ID`); continue; }
+      devs.push({ sn: d.sn, test_id: d.testId, script_name: d.scriptName, items: d.selectedItems });
+    }
+    if (devs.length) payload.push({ ip: m.ip, username: m.username, password: m.password, devices: devs });
+  }
+
+  if (errors.length)   { toast(errors[0], 'err'); return; }
+  if (!payload.length) { toast('Không có device nào được chọn', 'err'); return; }
+
+  setRunLoading(true);
+
+  // Clear terminals + status
+  document.getElementById('right').innerHTML = '';
+  Object.keys(runStats).forEach(k => delete runStats[k]);
+
+  try {
+    const res  = await fetch('/api/run', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ machines: payload, base_working_dir: baseDir })
+    });
+    const data = await res.json();
+    if (data.error) { toast(data.error, 'err'); return; }
+
+    buildTerminals(data.sessions);
+    data.sessions.forEach(s => { runStats[s.session_id] = 'queued'; });
+
+    document.getElementById('stats-bar').classList.add('show');
+    refreshStats();
+    toast(`Job #${data.job_id} — ${data.session_count} runs khởi động`, 'ok');
+  } catch (e) {
+    toast(`Lỗi: ${e.message}`, 'err');
+    setRunLoading(false);
+  }
+}
+
+function setRunLoading(v) {
+  document.getElementById('btn-run').disabled = v;
+  document.getElementById('run-spin').style.display = v ? 'block' : 'none';
+  document.getElementById('run-lbl').textContent = v ? 'Đang chạy...' : '🚀 Chạy tất cả';
+}
+
+// ═══════════════════════════════════════════════════════════
+//  TERMINALS
+// ═══════════════════════════════════════════════════════════
+function buildTerminals(sessions) {
+  const right = document.getElementById('right');
+  right.innerHTML = '';
+
+  // Group: ip → sn → sessions
+  const byIp = {};
+  sessions.forEach(s => {
+    (byIp[s.ip] = byIp[s.ip] || {})[s.sn] = [...((byIp[s.ip] || {})[s.sn] || []), s];
+  });
+  // rebuild properly
+  const grouped = {};
+  sessions.forEach(s => {
+    if (!grouped[s.ip]) grouped[s.ip] = {};
+    if (!grouped[s.ip][s.sn]) grouped[s.ip][s.sn] = [];
+    grouped[s.ip][s.sn].push(s);
+  });
+
+  for (const [ip, snMap] of Object.entries(grouped)) {
+    const mtg = document.createElement('div');
+    mtg.className = 'mtg';
+    mtg.innerHTML = `<div class="mtg-hd">🖥️ ${esc(ip)}</div>`;
+
+    for (const [sn, sess] of Object.entries(snMap)) {
+      const dtg = document.createElement('div');
+      dtg.className = 'dtg';
+      dtg.innerHTML = `<div class="dtg-hd">📱 ${esc(sn)}</div>`;
+
+      sess.forEach(s => {
+        const tc = document.createElement('div');
+        tc.className = 'tc'; tc.id = `tc-${s.session_id}`;
+        tc.innerHTML = `
+          <div class="tc-hd">
+            <div class="tc-title"><span>🧪</span><span>${esc(s.item)}</span></div>
+            <span class="badge b-q" id="badge-${s.session_id}">⏳ Queued</span>
+          </div>
+          <div class="tc-body" id="term-${s.session_id}"></div>`;
+        dtg.appendChild(tc);
+      });
+
+      mtg.appendChild(dtg);
+    }
+    right.appendChild(mtg);
+  }
+}
+
+function appendLog(sid, d) {
+  const term = document.getElementById(`term-${sid}`);
+  if (!term) return;
+  const line = document.createElement('div');
+  line.className = `ll l${d.level}`;
+  line.innerHTML = `<span class="ll-ts">${d.timestamp}</span><span class="ll-msg">${esc(d.message)}</span>`;
+  term.appendChild(line);
+  term.scrollTop = term.scrollHeight;
+}
+
+const STATUS_MAP = {
+  queued:          ['b-q',  '⏳ Queued',      ''],
+  connecting:      ['b-co', '🔌 Connecting',  ''],
+  creating_folder: ['b-cr', '📁 Preparing',   's-run'],
+  running:         ['b-r',  '⚡ Running',     's-run'],
+  success:         ['b-ok', '✅ Success',     's-ok'],
+  failed:          ['b-f',  '❌ Failed',      's-fail'],
+};
+
+function updateBadge(sid, status) {
+  const tc    = document.getElementById(`tc-${sid}`);
+  const badge = document.getElementById(`badge-${sid}`);
+  if (!tc || !badge) return;
+  const [bc, label, cc] = STATUS_MAP[status] || STATUS_MAP.queued;
+  tc.className    = `tc ${cc}`;
+  badge.className = `badge ${bc}`;
+  badge.textContent = label;
+}
+
+function refreshStats() {
+  const all = Object.values(runStats);
+  document.getElementById('s-total').textContent = all.length;
+  document.getElementById('s-run').textContent   = all.filter(s => ['connecting','creating_folder','running'].includes(s)).length;
+  document.getElementById('s-ok').textContent    = all.filter(s => s === 'success').length;
+  document.getElementById('s-fail').textContent  = all.filter(s => s === 'failed').length;
+  const done = all.length && all.every(s => s === 'success' || s === 'failed');
+  if (done) setRunLoading(false);
+}
+
+// ═══════════════════════════════════════════════════════════
+//  UTILS
+// ═══════════════════════════════════════════════════════════
+function esc(s) {
+  return String(s)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+function toast(msg, type = 'info') {
+  const a = document.getElementById('toasts');
+  const t = document.createElement('div');
+  t.className = `toast ${type}`;
+  t.textContent = msg;
+  a.appendChild(t);
+  setTimeout(() => t.remove(), 4500);
+}
+
+// ── INIT ──
+addMachine();
+</script>
+</body>
+</html>
